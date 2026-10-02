@@ -81,11 +81,11 @@ All tests completed successfully!
 Add this badge to your README.md to show test status:
 
 ```markdown
-[![Test Suite](https://github.com/parkredding/poor-house-dub-v2/actions/workflows/test.yml/badge.svg)](https://github.com/parkredding/poor-house-dub-v2/actions/workflows/test.yml)
+[![Test Suite](https://github.com/cjsostad/DubSauce-Dub-Siren/actions/workflows/test.yml/badge.svg)](https://github.com/cjsostad/DubSauce-Dub-Siren/actions/workflows/test.yml)
 ```
 
 Result: 
-[![Test Suite](https://github.com/parkredding/poor-house-dub-v2/actions/workflows/test.yml/badge.svg)](https://github.com/parkredding/poor-house-dub-v2/actions/workflows/test.yml)
+[![Test Suite](https://github.com/cjsostad/DubSauce-Dub-Siren/actions/workflows/test.yml/badge.svg)](https://github.com/cjsostad/DubSauce-Dub-Siren/actions/workflows/test.yml)
 
 ### Viewing Results
 

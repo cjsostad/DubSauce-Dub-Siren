@@ -138,7 +138,7 @@ If all wiring looks correct:
 Run the audio diagnostics script:
 
 ```bash
-cd ~/poor-house-dub-v2
+cd ~/dubsaucedubsiren
 ./audio_diagnostics.sh
 ```
 
@@ -174,7 +174,7 @@ sudo reboot
 **Solution:**
 1. Run the disable script:
    ```bash
-   cd ~/poor-house-dub-v2
+   cd ~/dubsaucedubsiren
    ./disable_onboard_audio.sh
    sudo reboot
    ```
@@ -228,7 +228,7 @@ If you've verified all of the above and still have no audio:
 
 1. Take photos of your wiring
 2. Run the diagnostic script: `./audio_diagnostics.sh > diagnostics.txt`
-3. Open an issue at: https://github.com/parkredding/poor-house-dub-v2/issues
+3. Open an issue at: https://github.com/cjsostad/DubSauce-Dub-Siren/issues
 
 Include:
 - Photos of PCM5102 wiring

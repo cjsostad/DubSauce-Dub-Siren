@@ -1,295 +1,149 @@
 #include "Audio/AudioEngine.h"
-#include <cstring>
-#include <cstdio>
 #include <cmath>
 #include <algorithm>
 
 namespace DubSiren {
 
+// Pi Waveform enum: Sine=0, Square=1, Saw=2, Triangle=3.
+// Voice uses the band-limited (POLYBLEP) DaisySP shapes.
+static inline uint8_t voiceWave(int piIdx) {
+    switch (piIdx & 3) {
+        case 0:  return daisysp::Oscillator::WAVE_SIN;
+        case 1:  return daisysp::Oscillator::WAVE_POLYBLEP_SQUARE;
+        case 2:  return daisysp::Oscillator::WAVE_POLYBLEP_SAW;
+        default: return daisysp::Oscillator::WAVE_POLYBLEP_TRI;
+    }
+}
+// LFO doesn't alias at LFO rates, so plain shapes are fine.
+static inline uint8_t lfoWave(int piIdx) {
+    switch (piIdx & 3) {
+        case 0:  return daisysp::Oscillator::WAVE_SIN;
+        case 1:  return daisysp::Oscillator::WAVE_SQUARE;
+        case 2:  return daisysp::Oscillator::WAVE_SAW;
+        default: return daisysp::Oscillator::WAVE_TRI;
+    }
+}
+
+static inline float clampf(float v, float lo, float hi) {
+    return std::max(lo, std::min(hi, v));
+}
+
 AudioEngine::AudioEngine(int sampleRate, int bufferSize)
     : sampleRate(sampleRate)
     , bufferSize(bufferSize)
-    , oscillator(sampleRate)
-    , lfo(sampleRate)
-    , envelope(sampleRate)
-    , filter(sampleRate)
-    , delay(sampleRate)
-    , reverb(sampleRate)
-    , volume(0.7f)
-    , baseFrequency(440.0f)
-    , lfoPitchDepth(0.0f)  // Default to 0 (no pitch modulation)
-    , pitchEnvMode(PitchEnvelopeMode::Up)  // Default to UP for classic dub siren
-    , currentFrequency(440.0f)
-    , frequencySmooth(440.0f, 0.08f)  // Increased smoothing to reduce zipper noise
-    , inReleasePhase(false)
-    , pitchEnvStartLevel(1.0f)
+    , level(0.7f)
+    , baseFreq(220.0f)
+    , lfoRate(4.0f)
+    , lfoDepthHz(0.0f)
+    , toneHz(4000.0f)
+    , delaySec(0.3f)
+    , feedback(0.5f)
+    , oscWaveIdx(1)   // Square (Pi enum) -> band-limited square
+    , lfoWaveIdx(0)   // Sine
+    , pitchEnvMode(PitchEnvelopeMode::None)
+    , gateOn(false)
+    , amp(0.0f)
+    , toneState(0.0f)
+    , delCurrent(0.0f)
 {
-    // Pre-allocate buffers
-    oscBuffer.resize(bufferSize);
-    envBuffer.resize(bufferSize);
-    lfoBuffer.resize(bufferSize);
-    filterBuffer.resize(bufferSize);
-    delayBuffer.resize(bufferSize);
-    
-    // Set initial parameters (Auto Wail preset)
-    oscillator.setWaveform(Waveform::Square);  // Square for classic siren sound
-    lfo.setFrequency(2.0f);      // 2 Hz - wee-woo every 0.5 seconds
-    lfo.setDepth(0.5f);          // Filter modulation depth (controllable by encoder)
-    lfo.setWaveform(Waveform::Triangle);  // Smooth pitch transitions
-    envelope.setAttack(0.01f);
-    envelope.setRelease(1.2f);   // Longer release: extended fade tail and pitch glide
-    filter.setCutoff(1800.0f);   // Darker base - tames square wave buzz
-    filter.setResonance(1.0f);   // Gentle - no resonant drama at the crossover
-    delay.setDryWet(0.3f);   // Fixed send level - no encoder controls this; feedback knob shapes the echo
-    delay.setFeedback(0.55f);    // Spacey dub echoes
-    reverb.setDryWet(0.0f);      // FX off at boot during voicing work; encoder brings it up
+    const float sr = static_cast<float>(sampleRate);
+
+    osc.Init(sr);
+    osc.SetWaveform(voiceWave(oscWaveIdx.get()));
+    osc.SetAmp(1.0f);
+
+    lfo.Init(sr);
+    lfo.SetWaveform(lfoWave(lfoWaveIdx.get()));
+    lfo.SetFreq(lfoRate.get());
+    lfo.SetAmp(0.0f);
+
+    fbFilt.Init(sr);
+    fbFilt.SetFreq(2800.0f);
+    fbFilt.SetRes(0.2f);
+    fbFilt.SetDrive(0.1f);
+
+    delayLine.Init();
+    delCurrent = delaySec.get() * sr;
 }
 
 void AudioEngine::process(float* output, int numFrames) {
-    // Get pitch envelope mode
-    PitchEnvelopeMode pitchMode = pitchEnvMode.get();
-    float baseFreq = baseFrequency.get();
-    float pitchDepth = lfoPitchDepth.get();
+    const float sr = static_cast<float>(sampleRate);
 
-    // Generate envelope first (we need it for pitch envelope calculation)
-    envelope.generate(envBuffer.data(), numFrames);
+    // Apply current parameters on the audio thread.
+    osc.SetWaveform(voiceWave(oscWaveIdx.get()));
+    lfo.SetWaveform(lfoWave(lfoWaveIdx.get()));
+    lfo.SetFreq(lfoRate.get());
+    lfo.SetAmp(lfoDepthHz.get());
 
-    // Generate LFO modulation (needed for pitch modulation)
-    lfo.generate(lfoBuffer.data(), numFrames);
+    const float base     = baseFreq.get();
+    const float fb       = feedback.get();
+    const float lvl      = level.get();
+    const float delTgt   = delaySec.get() * sr;
+    const float toneCoef = 1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * toneHz.get() / sr);
+    const bool  gate     = gateOn.load();
 
-    // Generate oscillator with pitch envelope and LFO pitch modulation
     for (int i = 0; i < numFrames; ++i) {
-        float targetFreq = baseFreq;
-        
-        // Apply pitch envelope during release phase
-        if (inReleasePhase && pitchMode != PitchEnvelopeMode::None) {
-            float envValue = envBuffer[i];
-            
-            // Calculate how far through release we are (0 = just started, 1 = finished)
-            // envValue goes from pitchEnvStartLevel down to 0
-            float releaseProgress = 0.0f;
-            if (pitchEnvStartLevel > 0.001f) {
-                releaseProgress = 1.0f - (envValue / pitchEnvStartLevel);
-                releaseProgress = clamp(releaseProgress, 0.0f, 1.0f);
-            }
-            
-            // Apply pitch shift (2 octaves = multiply by 4 at max)
-            // Use exponential curve for musical pitch sweep
-            if (pitchMode == PitchEnvelopeMode::Up) {
-                // Pitch goes UP: multiply by 1.0 to 4.0 (2 octaves up)
-                float pitchMult = std::pow(4.0f, releaseProgress);
-                targetFreq = baseFreq * pitchMult;
-            } else if (pitchMode == PitchEnvelopeMode::Down) {
-                // Pitch goes DOWN: multiply by 1.0 to 0.25 (2 octaves down)
-                float pitchMult = std::pow(0.25f, releaseProgress);
-                targetFreq = baseFreq * pitchMult;
-            }
-            
-            // End release phase when envelope is essentially done
-            if (envValue < 0.001f) {
-                inReleasePhase = false;
-            }
-        }
+        // click-free gate
+        daisysp::fonepole(amp, gate ? 1.0f : 0.0f, 0.002f);
 
-        // Apply LFO pitch modulation (if enabled)
-        if (pitchDepth > 0.001f) {
-            // LFO modulates pitch by ±N octaves where N = pitchDepth
-            // lfoBuffer[i] ranges from -1 to +1, so we multiply by pitchDepth to get the octave range
-            float octaveShift = lfoBuffer[i] * pitchDepth;
-            float pitchMult = std::pow(2.0f, octaveShift);
-            targetFreq *= pitchMult;
-        }
+        // sine (or selected) LFO wails the pitch, additive in Hz
+        float f = daisysp::fclamp(base + lfo.Process(), 20.0f, 8000.0f);
+        osc.SetFreq(f);
+        float sig = osc.Process() * amp;
 
-        // Smooth frequency changes to avoid clicks
-        frequencySmooth.setTarget(targetFreq);
-        currentFrequency = frequencySmooth.getNext();
-        if (currentFrequency < sweepMin) sweepMin = currentFrequency;
-        if (currentFrequency > sweepMax) sweepMax = currentFrequency;
-        oscillator.setFrequency(currentFrequency);
-        oscBuffer[i] = oscillator.generateSample();
-    }
+        // tone: output one-pole lowpass
+        daisysp::fonepole(toneState, sig, toneCoef);
+        sig = toneState;
 
-    // Debug: report swept pitch range once per second
-    sweepSampleCount += numFrames;
-    if (sweepSampleCount >= 48000) {
-        printf("[Sweep] %.0f - %.0f Hz (%.1f octaves)\n",
-               sweepMin, sweepMax, std::log2(sweepMax / std::max(sweepMin, 1.0f)));
-        sweepSampleCount = 0;
-        sweepMin = 1.0e9f;
-        sweepMax = 0.0f;
-    }
+        // slewed delay time -> dub pitch-bend on the tails
+        daisysp::fonepole(delCurrent, delTgt, 0.0002f);
+        delayLine.SetDelay(delCurrent);
 
-    // Apply LFO to filter cutoff and process
-    float baseCutoff = filter.getCutoff();
-    for (int i = 0; i < numFrames; ++i) {
-        // LFO modulates filter cutoff by up to ±3 octaves (scaled by depth)
-        float modCutoff = baseCutoff;   // Filter fixed at knob setting; LFO drives pitch only, like the S-1
-        modCutoff = clamp(modCutoff, 20.0f, baseCutoff);  // LFO dips below the knob setting, never above it
-        filter.setCutoff(modCutoff);
-        filterBuffer[i] = std::tanh(filter.processSample(oscBuffer[i]) * 1.5f);  // Drive: analog-style saturation warmth
-    }
-    filter.setCutoff(baseCutoff);
-    
-    // Apply envelope
-    for (int i = 0; i < numFrames; ++i) {
-        if (envBuffer[i] < 0.001f) {
-            filterBuffer[i] = 0.0f;
-        } else {
-            filterBuffer[i] *= envBuffer[i];
-        }
-    }
-    
-    // Apply delay
-    delay.process(filterBuffer.data(), delayBuffer.data(), numFrames);
-    std::copy(delayBuffer.begin(), delayBuffer.begin() + numFrames, filterBuffer.begin());
-    
-    // Apply reverb
-    reverb.process(filterBuffer.data(), delayBuffer.data(), numFrames);
-    std::copy(delayBuffer.begin(), delayBuffer.begin() + numFrames, filterBuffer.begin());
+        float echo = delayLine.Read();
+        fbFilt.Process(echo);
+        echo = fbFilt.Low();
+        delayLine.Write(std::tanh(sig + fb * echo)); // soft-clipped feedback
 
-    // Output voicing: fixed gentle lowpass (~4.5 kHz one-pole), matching the
-    // S-1's high-end rolloff - hardware sirens all shape the top like this
-    for (int i = 0; i < numFrames; ++i) {
-        voicingLPState += 0.445f * (filterBuffer[i] - voicingLPState);
-        filterBuffer[i] = voicingLPState;
-    }
-
-    // Apply DC blocking
-    dcBlocker.process(filterBuffer.data(), filterBuffer.data(), numFrames);
-    
-    // Apply volume and convert to stereo interleaved
-    float vol = volume.get();
-    for (int i = 0; i < numFrames; ++i) {
-        float sample = clamp(filterBuffer[i] * vol, -1.0f, 1.0f);
-        output[i * 2] = sample;      // Left
-        output[i * 2 + 1] = sample;  // Right
+        float out = clampf((sig + echo) * lvl, -1.0f, 1.0f);
+        output[i * 2]     = out; // L
+        output[i * 2 + 1] = out; // R
     }
 }
 
 void AudioEngine::trigger() {
     std::lock_guard<std::mutex> lock(triggerMutex);
-    oscillator.resetPhase();
-    envelope.trigger();
-    inReleasePhase = false;  // We're in attack/sustain phase
+    gateOn.store(true);
 }
 
 void AudioEngine::release() {
     std::lock_guard<std::mutex> lock(triggerMutex);
-    // Capture envelope level at start of release for pitch envelope
-    pitchEnvStartLevel = envelope.getCurrentValue();
-    inReleasePhase = true;  // Start release phase (enables pitch envelope)
-    envelope.release();
+    gateOn.store(false);
 }
 
 const char* AudioEngine::cyclePitchEnvelope() {
-    PitchEnvelopeMode current = pitchEnvMode.get();
-    PitchEnvelopeMode next;
-    
-    switch (current) {
-        case PitchEnvelopeMode::None:
-            next = PitchEnvelopeMode::Up;
-            break;
-        case PitchEnvelopeMode::Up:
-            next = PitchEnvelopeMode::Down;
-            break;
-        case PitchEnvelopeMode::Down:
-        default:
-            next = PitchEnvelopeMode::None;
-            break;
-    }
-    
-    pitchEnvMode.set(next);
-    
-    switch (next) {
-        case PitchEnvelopeMode::None: return "none";
-        case PitchEnvelopeMode::Up: return "up";
-        case PitchEnvelopeMode::Down: return "down";
-        default: return "none";
-    }
+    return "none"; // siren voice has no pitch envelope
 }
 
-// ============================================================================
-// Parameter Setters
-// ============================================================================
-
-void AudioEngine::setVolume(float vol) {
-    volume.set(clamp(vol, 0.0f, 1.0f));
-}
-
-void AudioEngine::setFrequency(float freq) {
-    baseFrequency.set(clamp(freq, 20.0f, 20000.0f));
-}
-
-void AudioEngine::setWaveform(Waveform wf) {
-    oscillator.setWaveform(wf);
-}
-
-void AudioEngine::setWaveform(int index) {
-    setWaveform(static_cast<Waveform>(index % 4));
-}
-
-void AudioEngine::setAttackTime(float seconds) {
-    envelope.setAttack(seconds);
-}
-
-void AudioEngine::setReleaseTime(float seconds) {
-    envelope.setRelease(seconds);
-}
-
-void AudioEngine::setLfoRate(float rate) {
-    lfo.setFrequency(rate);
-}
-
-void AudioEngine::setLfoDepth(float depth) {
-    lfo.setDepth(depth);
-}
-
-void AudioEngine::setLfoPitchDepth(float depth) {
-    lfoPitchDepth.set(clamp(depth, 0.0f, 2.0f));
-}
-
-void AudioEngine::setLfoWaveform(Waveform wf) {
-    lfo.setWaveform(wf);
-}
-
-void AudioEngine::setLfoWaveform(int index) {
-    setLfoWaveform(static_cast<Waveform>(index % 4));
-}
-
-void AudioEngine::setFilterCutoff(float freq) {
-    filter.setCutoff(freq);
-}
-
-void AudioEngine::setFilterResonance(float res) {
-    filter.setResonance(0.5f + res * 7.5f);  // Map encoder 0-1 to Q 0.5-8: dull to screaming
-}
-
-void AudioEngine::setDelayTime(float seconds) {
-    delay.setDelayTime(seconds);
-}
-
-void AudioEngine::setDelayFeedback(float feedback) {
-    delay.setFeedback(feedback);
-}
-
-void AudioEngine::setDelayMix(float mix) {
-    delay.setDryWet(mix);
-}
-
-void AudioEngine::setReverbSize(float size) {
-    reverb.setSize(size);
-}
-
-void AudioEngine::setReverbMix(float mix) {
-    reverb.setDryWet(mix);
-}
-
-void AudioEngine::setReverbDamping(float damping) {
-    reverb.setDamping(damping);
-}
-
-void AudioEngine::setPitchEnvelopeMode(PitchEnvelopeMode mode) {
-    pitchEnvMode.set(mode);
-}
+// ---------------------------------------------------------------- setters
+void AudioEngine::setVolume(float v)          { level.set(clampf(v, 0.0f, 1.0f)); }
+void AudioEngine::setFrequency(float freq)    { baseFreq.set(clampf(freq, 20.0f, 8000.0f)); }
+void AudioEngine::setWaveform(Waveform wf)    { oscWaveIdx.set(static_cast<int>(wf)); }
+void AudioEngine::setWaveform(int index)      { oscWaveIdx.set(index & 3); }
+void AudioEngine::setAttackTime(float)        {}
+void AudioEngine::setReleaseTime(float)       {}
+void AudioEngine::setLfoRate(float rate)      { lfoRate.set(clampf(rate, 0.02f, 30.0f)); }
+void AudioEngine::setLfoDepth(float depth)    { lfoDepthHz.set(clampf(depth, 0.0f, 1.0f) * 1200.0f); }
+void AudioEngine::setLfoPitchDepth(float)     {}
+void AudioEngine::setLfoWaveform(Waveform wf) { lfoWaveIdx.set(static_cast<int>(wf)); }
+void AudioEngine::setLfoWaveform(int index)   { lfoWaveIdx.set(index & 3); }
+void AudioEngine::setFilterCutoff(float freq) { toneHz.set(clampf(freq, 200.0f, 16000.0f)); }
+void AudioEngine::setFilterResonance(float)   {}
+void AudioEngine::setDelayTime(float seconds) { delaySec.set(clampf(seconds, 0.001f, 2.5f)); }
+void AudioEngine::setDelayFeedback(float f)   { feedback.set(clampf(f, 0.0f, 0.95f)); }
+void AudioEngine::setDelayMix(float)          {}
+void AudioEngine::setReverbSize(float)        {}
+void AudioEngine::setReverbMix(float)         {}
+void AudioEngine::setReverbDamping(float)     {}
+void AudioEngine::setPitchEnvelopeMode(PitchEnvelopeMode m) { pitchEnvMode.set(m); }
 
 } // namespace DubSiren

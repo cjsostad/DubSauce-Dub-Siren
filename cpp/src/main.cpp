@@ -65,7 +65,7 @@ void signalHandler(int signal) {
 void printBanner() {
     std::cout << "\n";
     std::cout << "============================================================" << std::endl;
-    std::cout << "  Poor House Dub v2" << std::endl;
+    std::cout << "  DubSauce Dub Siren" << std::endl;
     std::cout << "  Raspberry Pi Zero 2 + PCM5102 DAC" << std::endl;
     std::cout << "  C++ Edition" << std::endl;
     std::cout << "============================================================" << std::endl;

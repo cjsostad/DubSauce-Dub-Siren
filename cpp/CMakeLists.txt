@@ -83,6 +83,8 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+add_subdirectory(DaisySP)
+
 # Create the executable
 add_executable(dubsiren
     ${DSP_SOURCES}
@@ -95,6 +97,7 @@ add_executable(dubsiren
 target_link_libraries(dubsiren
     PRIVATE
     m  # math library
+    DaisySP
 )
 
 # Link pthreads (handle both CMake-detected and manual cases)

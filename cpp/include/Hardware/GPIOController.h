@@ -249,6 +249,7 @@ private:
         float delayTime = 0.375f;  // Dotted eighth - classic dub
         float filterRes = 0.5f;    // Standard resonance
         int oscWaveform = 1;  // Square for classic siren sound
+        int lfoWaveform = 0;  // 0=Sine 1=Square 2=Saw 3=Triangle (repurposed from filter_res)
         float reverbSize = 0.7f;   // Large dub space
         float release = 1.2f;      // Longer release: extended fade tail and pitch glide
     };
@@ -266,12 +267,16 @@ private:
     // Button handlers
     void onTriggerPress();
     void onTriggerRelease();
+    void updateGate();
     void onShiftPress();
     void onShiftRelease();
     void onShutdownPress();
     
     // Pitch envelope switch handler
     void onPitchEnvChange(SwitchPosition position);
+    // Combined gate state: trigger button OR 3-position switch
+    bool triggerButtonHeld = false;
+    bool switchGateOn = false;
     
     // Secret mode handling
     void checkSecretModeActivation();

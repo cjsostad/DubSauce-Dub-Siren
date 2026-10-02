@@ -636,10 +636,12 @@ void GPIOController::handleEncoder(int encoderIndex, int direction) {
         newValue = params.baseFreq;
     }
     else if (strcmp(paramName, "filter_res") == 0) {
-        step = 0.04f * direction;
-        params.filterRes = clamp(params.filterRes + step, 0.0f, 0.95f);
-        engine.setFilterResonance(params.filterRes);
-        newValue = params.filterRes;
+        // Repurposed: LFO / wail shape selector
+        params.lfoWaveform = (params.lfoWaveform + direction + 4) % 4;
+        engine.setLfoWaveform(params.lfoWaveform);
+        newValue = static_cast<float>(params.lfoWaveform);
+        const char* lfoNames[] = {"Sine", "Square", "Saw", "Triangle"};
+        printf("[LFO shape] %s\n", lfoNames[params.lfoWaveform]);
     }
     else if (strcmp(paramName, "delay_feedback") == 0) {
         step = 0.04f * direction;
@@ -648,10 +650,11 @@ void GPIOController::handleEncoder(int encoderIndex, int direction) {
         newValue = params.delayFeedback;
     }
     else if (strcmp(paramName, "reverb_mix") == 0) {
+        // Repurposed: siren output level
         step = 0.042f * direction;
-        params.reverbMix = clamp(params.reverbMix + step, 0.0f, 1.0f);
-        engine.setReverbMix(params.reverbMix);
-        newValue = params.reverbMix;
+        params.volume = clamp(params.volume + step, 0.0f, 1.0f);
+        engine.setVolume(params.volume);
+        newValue = params.volume;
     }
     else if (strcmp(paramName, "lfo_rate") == 0) {
         // Logarithmic control for LFO rate (0.1 Hz to 20 Hz)
@@ -684,17 +687,33 @@ void GPIOController::handleEncoder(int encoderIndex, int direction) {
     }
     
     const char* bankName = (bank == Bank::A) ? "A" : "B";
-    std::cout << "[Bank " << bankName << "] " << paramName << ": " << newValue << std::endl;
+    if (strcmp(paramName, "reverb_size") == 0) {
+        std::cout << "[Bank " << bankName << "] unused" << std::endl;
+    } else {
+        const char* displayName = strcmp(paramName, "reverb_mix") == 0 ? "Level" : paramName;
+        std::cout << "[Bank " << bankName << "] " << displayName << ": " << newValue << std::endl;
+    }
 }
 
 void GPIOController::onTriggerPress() {
     std::cout << "Trigger: PRESSED" << std::endl;
-    engine.trigger();
+    triggerButtonHeld = true;
+    updateGate();
 }
 
 void GPIOController::onTriggerRelease() {
     std::cout << "Trigger: RELEASED" << std::endl;
-    engine.release();
+    triggerButtonHeld = false;
+    updateGate();
+}
+
+void GPIOController::updateGate() {
+    // Gate on if the trigger button is held OR the 3-position switch is
+    // off-center (momentary side held, or latch side engaged).
+    if (triggerButtonHeld || switchGateOn)
+        engine.trigger();
+    else
+        engine.release();
 }
 
 void GPIOController::onPitchEnvChange(SwitchPosition position) {
@@ -719,6 +738,10 @@ void GPIOController::onPitchEnvChange(SwitchPosition position) {
     }
 
     engine.setPitchEnvelopeMode(mode);
+
+    // Repurposed: 3-position switch = momentary/latch trigger (off = center)
+    switchGateOn = (position != SwitchPosition::Off);
+    updateGate();
 
     SecretMode currentMode = secretMode.load();
     if (currentMode != SecretMode::None) {

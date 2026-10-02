@@ -142,7 +142,7 @@ echo ""
 echo "----------------------------------------"
 echo "9. Checking Python sounddevice Library"
 echo "----------------------------------------"
-VENV_PYTHON="$HOME/poor-house-dub-v2-venv/bin/python3"
+VENV_PYTHON="$HOME/dubsaucedubsiren-venv/bin/python3"
 if [ -f "$VENV_PYTHON" ]; then
     echo "Querying devices via Python sounddevice:"
     "$VENV_PYTHON" -c "import sounddevice as sd; print(sd.query_devices())" 2>&1 || echo "  Failed to query devices"

@@ -1,6 +1,6 @@
 # GPIO Wiring Guide for Dub Siren V2
 
-Complete wiring instructions for the Poor House Dub V2 control surface with shift button bank switching.
+Complete wiring instructions for the DubSauce Dub Siren control surface with shift button bank switching.
 
 ## Overview
 
@@ -362,7 +362,7 @@ Common:     GND (Pin 20) to switch common terminal
 
 ### 1. Power On and Start Service
 ```bash
-cd ~/poor-house-dub-v2
+cd ~/dubsaucedubsiren
 sudo systemctl start dubsiren.service
 sudo journalctl -u dubsiren.service -f
 ```

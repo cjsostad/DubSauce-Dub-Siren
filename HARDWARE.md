@@ -215,8 +215,8 @@ When you hold the shift button, all 5 encoders immediately control their Bank B 
 
 3. **Test complete system**
    ```bash
-   ~/poor-house-dub-v2/cpp/build/dubsiren --simulate --interactive
-   ~/poor-house-dub-v2/cpp/build/dubsiren
+   ~/dubsaucedubsiren/cpp/build/dubsiren --simulate --interactive
+   ~/dubsaucedubsiren/cpp/build/dubsiren
    ```
 
 ## Troubleshooting

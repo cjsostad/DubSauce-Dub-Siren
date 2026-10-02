@@ -1,473 +1,163 @@
-# Dub Siren V2
+# DubSauce Dub Siren
 
-A professional dub siren synthesizer built on Raspberry Pi Zero 2 with PCM5102 I2S DAC.
+A C++17 dub siren for Raspberry Pi 3 and Raspberry Pi 4. The hardware application uses DaisySP for its oscillator and DSP, ALSA for audio playback, and GPIO controls for live performance. Audio output is intended for a PCM5102 I2S DAC.
 
-![Platform](https://img.shields.io/badge/platform-Raspberry%20Pi%20Zero%202-red)
-![C++](https://img.shields.io/badge/C%2B%2B-17-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+## Sound Engine
 
-## Features
+The current voice combines a band-limited oscillator, an LFO that modulates pitch, a tone low-pass filter, and a feedback delay with filtering and soft clipping. The default sample rate is 48 kHz.
 
-- **High-Performance C++ Engine**
-  - 5-10x faster than Python implementation
-  - ~10-20% CPU usage (vs 80-100% Python)
-  - Rock-solid real-time audio without pulsing
+**There is no reverb in this version.** Reverb and filter-resonance methods remain in the C++ interface for compatibility with older controller code, but the voice does not implement those effects. Pitch-envelope methods are also compatibility-only and do not make the voice pitch up or down. The three-position switch currently gates the siren instead; see [Controls](#controls).
 
-- **Real-time Audio Synthesis**
-  - Multiple oscillator waveforms (Sine, Square, Saw, Triangle)
-  - PolyBLEP anti-aliasing for clean sound
-  - Envelope generator with adjustable release
-  - Low-frequency oscillator (LFO) for modulation
+## Hardware
 
-- **Professional DSP Effects**
-  - Low-pass filter with resonance control
-  - Analog-style delay/echo with pitch-shifting time modulation
-  - Hybrid chamber reverb with early reflections, diffusion, and warm damping
+- Raspberry Pi 3 or Raspberry Pi 4 running Raspberry Pi OS
+- PCM5102 I2S DAC and a suitable amplifier or powered speakers
+- Five rotary encoders
+- Trigger, Shift, and Shutdown buttons
+- Three-position Up/Off/Down switch
+- Optional WS2812 status LED
 
-- **Hardware Control Surface**
-  - 5 rotary encoders with bank switching (10 parameters total)
-  - 3 momentary switches (trigger, shift, shutdown)
-  - 3-position toggle switch for pitch envelope (up/off/down)
-  - Shift button for accessing Bank A/B parameters
-  - Uses 15 GPIO pins (avoids I2S conflict)
-  - Secret modes: NJD (rasta presets) and UFO (sci-fi presets)
+The table uses **BCM GPIO numbers** and **physical 40-pin header numbers**. Input signals use pull-ups and are active when connected to ground. Connect encoder common terminals and switch/button ground terminals to a Pi GND pin. Check [HARDWARE.md](HARDWARE.md) for DAC power and board-specific wiring details before connecting hardware.
 
-- **Optional Status LED**
-  - WS2812 RGB LED for visual feedback
-  - Amber during boot, lime green when ready
-  - Slow color cycling in normal mode
-  - Rasta colors in NJD mode, green/purple in UFO mode
-  - Sound-reactive pulsing
+### GPIO and Wiring
 
-- **High-Quality Audio**
-  - PCM5102 I2S DAC for pristine audio output
-  - 48kHz sample rate
-  - Low latency real-time processing
+| Component | Signal | BCM GPIO | Physical header pin | Wire to |
+| --- | --- | ---: | ---: | --- |
+| Encoder 1 | CLK | 17 | 11 | Encoder 1 CLK |
+| Encoder 1 | DT | 5 | 29 | Encoder 1 DT |
+| Encoder 2 | CLK | 27 | 13 | Encoder 2 CLK |
+| Encoder 2 | DT | 22 | 15 | Encoder 2 DT |
+| Encoder 3 | CLK | 23 | 16 | Encoder 3 CLK |
+| Encoder 3 | DT | 24 | 18 | Encoder 3 DT |
+| Encoder 4 | CLK | 20 | 38 | Encoder 4 CLK |
+| Encoder 4 | DT | 26 | 37 | Encoder 4 DT |
+| Encoder 5 | CLK | 14 | 8 | Encoder 5 CLK |
+| Encoder 5 | DT | 13 | 33 | Encoder 5 DT |
+| Trigger button | Signal | 4 | 7 | Button terminal; other terminal to GND |
+| Shift button | Signal | 15 | 10 | Button terminal; other terminal to GND |
+| Shutdown button | Signal | 3 | 5 | Button terminal; other terminal to GND |
+| 3-position switch | Up contact | 10 | 19 | Up throw |
+| 3-position switch | Down contact | 9 | 21 | Down throw |
+| WS2812 LED (optional) | Data | 12 | 32 | LED data input; power as specified by LED/module |
+| PCM5102 DAC | LCK/LRCK | 18 | 12 | DAC LCK/LRCK |
+| PCM5102 DAC | BCK/BCLK | 19 | 35 | DAC BCK/BCLK |
+| PCM5102 DAC | DIN | 21 | 40 | DAC DIN |
 
-- **Appliance Mode**
-  - Read-only filesystem protection
-  - Safe to unplug power anytime
-  - No SD card corruption risk
+The 3-position switch common connects to GND; center/off leaves both throws open. Encoder common pins also connect to GND. The DAC uses BCM GPIO 18, 19, and 21 for I2S; do not connect controls to those BCM pins. The pin table above reflects the current C++ GPIO definitions. Some older wiring notes in `GPIO_WIRING_GUIDE.md` list earlier assignments, so use this table for this build.
 
-## Quick Start
+## Install and Build
 
-### Prerequisites
-
-- Raspberry Pi Zero 2 W
-- PCM5102 DAC module
-- 5x rotary encoders (EC11 5-pin, no VCC required)
-- 3x momentary switches
-- 1x 3-position ON/OFF/ON toggle switch (for pitch envelope)
-- MicroSD card (8GB+)
-- 5V 2.5A power supply
-- Optional: WS2812D-F5 RGB LED for status indication
-
-### Installation
-
-#### One-Line Installer (Recommended)
-
-The easiest way to install on your Raspberry Pi Zero 2W:
+On the Pi, clone the project and its DaisySP dependency:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/parkredding/poor-house-dub-v2/main/cpp/install.sh | bash
+git clone https://github.com/cjsostad/DubSauce-Dub-Siren.git
+cd DubSauce-Dub-Siren
+git clone https://github.com/electro-smith/DaisySP.git cpp/DaisySP
 ```
 
-This will:
-- Install all build dependencies (cmake, ALSA, libgpiod)
-- Configure I2S audio for PCM5102 DAC
-- Build the C++ application
-- Create and configure the systemd service
-- Display wiring instructions
+CMake requires DaisySP at `cpp/DaisySP`; the dependency is not bundled in the project checkout.
 
-After installation completes, reboot your Pi and follow the on-screen instructions.
-
-#### Manual Installation
-
-If you prefer to install manually:
-
-1. **Flash Raspberry Pi OS**
-   ```bash
-   # Use Raspberry Pi Imager to flash Raspberry Pi OS Lite (64-bit)
-   ```
-
-2. **Clone the repository**
-   ```bash
-   git clone https://github.com/parkredding/poor-house-dub-v2.git
-   cd poor-house-dub-v2
-   ```
-
-3. **Run setup script**
-   ```bash
-   bash setup.sh
-   ```
-
-4. **Reboot**
-   ```bash
-   sudo reboot
-   ```
-
-### Hardware Setup
-
-See [HARDWARE.md](HARDWARE.md) for detailed wiring instructions.
-
-**Testing incrementally?** Check out [MINIMAL_BUILD.md](MINIMAL_BUILD.md) to build with just 1-2 encoders and a button for quick testing.
-
-**Quick PCM5102 Wiring:**
-```
-PCM5102    ->  Raspberry Pi Zero 2
-VIN        ->  3.3V (Pin 1)
-GND        ->  GND (Pin 6)
-LCK        ->  GPIO 18 (Pin 12)
-BCK        ->  GPIO 19 (Pin 35)
-DIN        ->  GPIO 21 (Pin 40)
-SCK        ->  GND (for 48kHz)
-FMT        ->  GND (I2S format)
-XSMT       ->  GND (soft mute OFF)
-```
-
-### Running the Siren
-
-**Test in simulation mode (no hardware required):**
-```bash
-~/poor-house-dub-v2/cpp/build/dubsiren --simulate --interactive
-```
-
-**Run on hardware:**
-```bash
-~/poor-house-dub-v2/cpp/build/dubsiren
-```
-
-**Run as system service:**
-```bash
-sudo systemctl enable dubsiren-cpp.service
-sudo systemctl start dubsiren-cpp.service
-```
-
-### Enable Appliance Mode (Recommended)
-
-After everything is working, enable appliance mode to protect against SD card corruption:
+For a full Raspberry Pi setup, run:
 
 ```bash
-sudo ./enable_appliance_mode.sh
+bash cpp/setup.sh
 ```
 
-This makes the filesystem read-only - users can safely unplug power anytime!
+The setup script installs build and audio dependencies, configures I2S, builds the application, and installs the `dubsiren-cpp.service` systemd unit. Review the script before running it if the Pi has custom audio or system configuration.
 
-## Control Layout
-
-The control surface uses 5 rotary encoders with a **shift button** for bank switching, providing access to 10 parameters across two banks:
-
-```
-Encoders:  [Encoder 1]  [Encoder 2]  [Encoder 3]  [Encoder 4]  [Encoder 5]
-            Volume       Filter       Base Freq    Delay FB     Reverb Mix
-            (Release)    (Delay)      (Filter Res) (Osc Wave)   (Rev Size)
-
-Buttons:   [TRIGGER]    [↑|○|↓]      [SHIFT]      [SHUTDOWN]
-                        PITCH ENV
-                        (3-pos toggle)
-
-Optional:  [◉ LED]  ← WS2812 status indicator
-```
-
-### Bank A (Normal Mode)
-
-| Encoder | Parameter | Function | Range |
-|---------|-----------|----------|-------|
-| **Encoder 1** | Volume | Master output volume | 0.0 to 1.0 |
-| **Encoder 2** | Filter Freq | Low-pass filter cutoff frequency | 20Hz to 20kHz |
-| **Encoder 3** | Base Freq | Oscillator base pitch | 50Hz to 2kHz |
-| **Encoder 4** | Delay FB | Delay feedback amount | 0.0 to 0.95 |
-| **Encoder 5** | Reverb Mix | Reverb dry/wet mix | 0.0 (dry) to 1.0 (wet) |
-
-### Bank B (Shift Held)
-
-| Encoder | Parameter | Function | Range |
-|---------|-----------|----------|-------|
-| **Encoder 1** | Release Time | Oscillator envelope release time | 0.001s to 5.0s |
-| **Encoder 2** | Delay Time | Delay effect time | 0.001s to 2.0s |
-| **Encoder 3** | Filter Res | Filter resonance/emphasis | 0.0 to 0.95 |
-| **Encoder 4** | Osc Wave | Oscillator waveform | Sine/Square/Saw/Triangle |
-| **Encoder 5** | Reverb Size | Reverb room size | 0.0 to 1.0 |
-
-### Button Functions
-
-| Button | Function | Behavior |
-|--------|----------|----------|
-| **TRIGGER** | Trigger the siren | Press to start, release to stop |
-| **SHIFT** | Switch to Bank B | Hold to access Bank B parameters |
-| **SHUTDOWN** | Safe system shutdown | Press to safely power down the Pi |
-
-### Pitch Envelope Switch (3-Position Toggle)
-
-| Position | Effect |
-|----------|--------|
-| **UP** | Pitch rises (2 octaves) on release |
-| **CENTER** | No pitch envelope |
-| **DOWN** | Pitch falls (2 octaves) on release |
-
-### Secret Modes
-
-Rapidly toggle the pitch envelope switch to unlock hidden preset modes:
-
-| Mode | Activation | Description |
-|------|------------|-------------|
-| **NJD Mode** | 5 toggles in 1 second | Classic NJD dub siren presets |
-| **UFO Mode** | 10 toggles in 2 seconds | Sci-fi alien sound presets |
-
-**In secret modes:**
-- Use **SHIFT** button to cycle through presets
-- Delay and reverb effects still apply
-- Toggle switch again to exit (or power cycle)
-
-### Optional Status LED (WS2812)
-
-| State | LED Behavior |
-|-------|--------------|
-| **Boot** | Amber color |
-| **Ready** | Lime green (2 sec), then cycling |
-| **Normal Mode** | Slow color cycling (changes over minutes) |
-| **NJD Mode** | Fast Rasta colors (red/yellow/green) |
-| **UFO Mode** | Fast green/purple alien theme |
-| **Audio Playing** | Pulses brighter with sound |
-
-## Architecture
-
-### Software Components
-
-```
-┌─────────────────────────────────────────┐
-│           main.cpp                       │
-│      (Application Entry Point)           │
-└─────────────────────────────────────────┘
-                  │
-    ┌─────────────┼─────────────┐
-    │             │             │
-    ▼             ▼             ▼
-┌────────┐  ┌──────────┐  ┌──────────┐
-│  GPIO  │  │  Audio   │  │  Audio   │
-│Control │─▶│  Engine  │─▶│  Output  │
-└────────┘  └──────────┘  └──────────┘
-                │
-    ┌───────────┴───────────────┐
-    │          DSP              │
-    │  ┌──────┐ ┌──────┐       │
-    │  │ Osc  │ │ Env  │       │
-    │  └──────┘ └──────┘       │
-    │  ┌──────┐ ┌──────┐       │
-    │  │Filter│ │ LFO  │       │
-    │  └──────┘ └──────┘       │
-    │  ┌──────┐ ┌──────┐       │
-    │  │Delay │ │Reverb│       │
-    │  └──────┘ └──────┘       │
-    └───────────────────────────┘
-```
-
-### File Structure
-
-```
-poor-house-dub-v2/
-├── cpp/                         # C++ implementation
-│   ├── CMakeLists.txt           # Build configuration
-│   ├── build.sh                 # Build script
-│   ├── setup.sh                 # Full setup script
-│   ├── install.sh               # One-line installer
-│   ├── include/                 # Header files
-│   │   ├── Common.h
-│   │   ├── Audio/
-│   │   │   ├── AudioEngine.h
-│   │   │   └── AudioOutput.h
-│   │   ├── DSP/
-│   │   │   ├── Oscillator.h
-│   │   │   ├── Envelope.h
-│   │   │   ├── Filter.h
-│   │   │   ├── LFO.h
-│   │   │   ├── Delay.h
-│   │   │   └── Reverb.h
-│   │   └── Hardware/
-│   │       ├── GPIOController.h
-│   │       └── LEDController.h
-│   └── src/                     # Source files
-│       ├── main.cpp
-│       ├── Audio/
-│       ├── DSP/
-│       └── Hardware/
-├── setup.sh                     # Main setup (runs cpp/setup.sh)
-├── enable_appliance_mode.sh     # Enable read-only filesystem
-├── disable_appliance_mode.sh    # Disable for updates
-├── HARDWARE.md                  # Hardware wiring guide
-├── GPIO_WIRING_GUIDE.md         # GPIO pin assignments
-├── QUICKSTART.md                # Quick start guide
-└── README.md                    # This file
-```
-
-## Development
-
-### Command Line Options
+To build manually, install `build-essential`, `cmake`, `git`, `libasound2-dev`, and `libgpiod-dev`, then run:
 
 ```bash
-./dubsiren --help
-
-Options:
-  --sample-rate RATE    Audio sample rate (default: 48000)
-  --buffer-size SIZE    Audio buffer size (default: 256)
-  --device DEVICE       ALSA audio device (default: "default")
-  --simulate            Run in simulation mode
-  --interactive         Run in interactive mode
+./cpp/build.sh
 ```
 
-### Simulation Mode
-
-Test without hardware using simulation mode:
+The build script detects the Pi architecture and enables Raspberry Pi build options. Add `--clean` to remove and recreate the build directory:
 
 ```bash
-./dubsiren --simulate --interactive
-
-Commands:
-  t - Toggle trigger (start/stop siren)
-  p - Cycle pitch envelope mode
-  s - Show status
-  h - Show help
-  q - Quit
+./cpp/build.sh --clean
 ```
 
-### Building from Source
+Or configure and build directly from the repository root:
 
 ```bash
-cd cpp
-./build.sh           # Release build
-./build.sh --debug   # Debug build
-./build.sh --clean   # Clean rebuild
+cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release -DBUILD_FOR_PI=ON
+cmake --build cpp/build --parallel 2
 ```
 
-## Performance
+The executable is `cpp/build/dubsiren`.
 
-| Metric | Value |
-|--------|-------|
-| **CPU Usage** | ~10-20% on Pi Zero 2 (single core) |
-| **Latency** | ~5ms (256 sample buffer @ 48kHz) |
-| **Sample Rate** | 48kHz |
-| **Bit Depth** | 16-bit I2S output |
+## Run
+
+With the DAC connected and I2S configured, start the hardware application:
+
+```bash
+./cpp/build/dubsiren
+```
+
+The default ALSA device is `default`. Select another playback device with `--device DEVICE`. Other options are:
+
+```text
+--sample-rate RATE    Sample rate (default: 48000)
+--buffer-size SIZE    Buffer size in samples (default: 256)
+--device DEVICE       ALSA playback device (default: default)
+--simulate            Run DSP without physical audio output
+--interactive         Enable keyboard controls
+--help                Print usage information
+```
+
+For a no-hardware, no-audio test, run both simulation and interactive mode:
+
+```bash
+./cpp/build/dubsiren --simulate --interactive
+```
+
+In interactive mode, `t` toggles the siren gate, `s` prints status, `h` prints help, and `q` exits. `p` cycles the stored compatibility pitch-envelope setting; it does not change the sound.
+
+### Run as a Service
+
+After `cpp/setup.sh` has installed the service:
+
+```bash
+sudo systemctl enable --now dubsiren-cpp.service
+sudo systemctl status dubsiren-cpp.service
+```
+
+Follow its logs with `sudo journalctl -u dubsiren-cpp.service -f`. Stop it with `sudo systemctl stop dubsiren-cpp.service`; disable automatic startup with `sudo systemctl disable dubsiren-cpp.service`.
+
+## Controls
+
+Hold **Shift** to select Bank B and release it to return to Bank A. Encoders are numbered from left to right.
+
+| Encoder | Bank A (Shift released) | Bank B (Shift held) |
+| --- | --- | --- |
+| 1 | LFO depth (0 to 1) | Level / output volume (0 to 1) |
+| 2 | Base pitch (50 to 2000 Hz) | Delay time (0.001 to 2 seconds) |
+| 3 | Tone filter cutoff (250 to 20000 Hz) | LFO/wail shape: Sine, Square, Saw, Triangle |
+| 4 | Delay feedback (0 to 0.95) | Oscillator shape: Sine, Square, Saw, Triangle |
+| 5 | LFO rate (0.1 to 20 Hz) | Unused (former reverb-size control) |
+
+Hold **Trigger** to sound the siren; release it to stop. The three-position switch also operates the gate: either Up or Down turns the siren on, while Off/center turns the switch gate off. The siren remains on while the trigger button is held or the switch is off-center. **The switch does not currently pitch the siren up or down.**
+
+There is no reverb processing. The former reverb-mix encoder position has been repurposed as **Level**; the former reverb-size position is **unused**. The Shutdown button requests a system shutdown.
 
 ## Troubleshooting
 
-### No audio output
-```bash
-# Check I2S configuration
-grep "dtparam=i2s=on" /boot/config.txt
-grep "dtoverlay=hifiberry-dac" /boot/config.txt
+- **No audio:** Check PCM5102 wiring and I2S configuration, list ALSA devices with `aplay -l`, and try selecting the correct device with `--device`. See [PCM5102_TROUBLESHOOTING.md](PCM5102_TROUBLESHOOTING.md).
+- **GPIO controls do not respond:** Verify the BCM and physical pin numbers in the table above. Install `libgpiod-dev` and `gpiod`; this build requests inputs through `/dev/gpiochip0` when libgpiod is available.
+- **CMake cannot find DaisySP:** Verify `cpp/DaisySP/CMakeLists.txt` exists. Clone DaisySP into `cpp/DaisySP` if it is missing.
+- **Audio glitches:** Check CPU load, try a larger `--buffer-size`, and run `bash audio_diagnostics.sh`.
 
-# List audio devices
-aplay -l
+## Tests
 
-# Test with ALSA
-speaker-test -t wav -c 2 -D hw:0,0
-```
-
-### Service issues
-```bash
-# Check service status
-sudo systemctl status dubsiren-cpp.service
-
-# View logs
-journalctl -u dubsiren-cpp.service -f
-
-# Restart service
-sudo systemctl restart dubsiren-cpp.service
-```
-
-### Buffer underruns
-```bash
-# Increase buffer size
-./dubsiren --buffer-size 512
-
-# Check CPU usage
-top
-```
-
-See [HARDWARE.md](HARDWARE.md) for more troubleshooting tips.
-
-## Technical Details
-
-### Audio Processing Chain
-
-```
-Oscillator → Envelope → Filter → Delay → Reverb → Output
-     ↑
-    LFO (modulation)
-```
-
-### DSP Algorithms
-
-- **Oscillator:** PolyBLEP anti-aliased waveforms (sine, square, saw, triangle)
-- **Filter:** One-pole low-pass with resonance feedback
-- **Delay:** Circular buffer with feedback and analog-style pitch-shifting modulation
-- **Reverb:** Hybrid chamber reverb (early reflections + allpass diffusion + 6 damped comb filters)
-- **Envelope:** ADSR with configurable release
-
-### GPIO Interrupt Handling
-
-- Rotary encoders use quadrature decoding via libgpiod
-- Software debouncing (50ms)
-- Interrupt-driven for low latency
-- Internal pull-up resistors enabled
-
-## Service Management
+The Jest suite covers the retained browser/Web Audio prototype:
 
 ```bash
-# Start the siren
-sudo systemctl start dubsiren-cpp.service
-
-# Stop the siren
-sudo systemctl stop dubsiren-cpp.service
-
-# Check status
-sudo systemctl status dubsiren-cpp.service
-
-# View logs
-journalctl -u dubsiren-cpp.service -f
-
-# Enable auto-start on boot
-sudo systemctl enable dubsiren-cpp.service
-
-# Disable auto-start
-sudo systemctl disable dubsiren-cpp.service
+npm install
+npm test
 ```
 
-## Contributing
-
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test on actual hardware
-5. Submit a pull request
+It does not test the C++ DaisySP voice, Raspberry Pi GPIO, ALSA playback, or physical hardware. Test those on the target Pi.
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Acknowledgments
-
-- PCM5102 DAC implementation based on HiFiBerry DAC
-- DSP algorithms inspired by classic analog synthesizers
-- Dub siren concept from Jamaican sound system culture
-
-## Support
-
-- **Issues:** https://github.com/parkredding/poor-house-dub-v2/issues
-- **Documentation:** See [HARDWARE.md](HARDWARE.md)
-
-## Roadmap
-
-- [ ] MIDI input support
-- [ ] Preset save/load system
-- [ ] OLED display for parameter feedback
-- [ ] Additional effects (chorus, phaser)
-- [ ] CV/Gate inputs for modular integration
-- [ ] Web interface for remote control
-- [ ] JUCE framework integration for VST3 plugin
-
----
-
-**Built with ❤️ for the dub community**
+MIT. See [LICENSE](LICENSE).

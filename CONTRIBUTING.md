@@ -1,4 +1,4 @@
-# Contributing to Poor House Dub v2
+# Contributing to DubSauce Dub Siren
 
 Thank you for your interest in contributing! This document provides guidelines and instructions for contributing to the project.
 
@@ -13,8 +13,8 @@ Thank you for your interest in contributing! This document provides guidelines a
 
 1. **Fork the repository**
    ```bash
-   git clone https://github.com/parkredding/poor-house-dub-v2.git
-   cd poor-house-dub-v2
+   git clone https://github.com/cjsostad/DubSauce-Dub-Siren.git
+   cd dubsaucedubsiren
    ```
 
 2. **Install dependencies**
