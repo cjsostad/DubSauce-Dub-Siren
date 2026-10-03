@@ -102,6 +102,7 @@ private:
     float amp;
     float toneState;
     float delCurrent;
+    float baseFreqCurrent;
 
     std::mutex triggerMutex;
 };

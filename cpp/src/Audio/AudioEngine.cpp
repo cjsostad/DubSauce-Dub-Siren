@@ -45,6 +45,7 @@ AudioEngine::AudioEngine(int sampleRate, int bufferSize)
     , amp(0.0f)
     , toneState(0.0f)
     , delCurrent(0.0f)
+    , baseFreqCurrent(220.0f)
 {
     const float sr = static_cast<float>(sampleRate);
 
@@ -75,7 +76,6 @@ void AudioEngine::process(float* output, int numFrames) {
     lfo.SetFreq(lfoRate.get());
     lfo.SetAmp(lfoDepthHz.get());
 
-    const float base     = baseFreq.get();
     const float fb       = feedback.get();
     const float lvl      = level.get();
     const float delTgt   = delaySec.get() * sr;
@@ -87,7 +87,9 @@ void AudioEngine::process(float* output, int numFrames) {
         daisysp::fonepole(amp, gate ? 1.0f : 0.0f, 0.002f);
 
         // sine (or selected) LFO wails the pitch, additive in Hz
-        float f = daisysp::fclamp(base + lfo.Process(), 20.0f, 8000.0f);
+        // Tune 0.01f by ear on hardware; smaller is smoother, larger is faster.
+        daisysp::fonepole(baseFreqCurrent, baseFreq.get(), 0.01f);
+        float f = daisysp::fclamp(baseFreqCurrent + lfo.Process(), 20.0f, 8000.0f);
         osc.SetFreq(f);
         float sig = osc.Process() * amp;
 
