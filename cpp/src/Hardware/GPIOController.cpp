@@ -541,7 +541,7 @@ void GPIOController::start() {
     engine.setReverbMix(params.reverbMix);
     engine.setReleaseTime(params.release);
     engine.setDelayTime(params.delayTime);
-    engine.setReverbSize(params.reverbSize);
+    engine.setDelayDamping(params.delayDamping);
     engine.setWaveform(params.oscWaveform);
 
     std::cout << "  Initial LFO: depth=" << params.lfoDepth << ", rate=" << params.lfoRate << "Hz" << std::endl;
@@ -597,7 +597,7 @@ void GPIOController::handleEncoder(int encoderIndex, int direction) {
     // Bank A parameters
     const char* bankAParams[] = {"lfo_depth", "base_freq", "filter_freq", "delay_feedback", "lfo_rate"};
     // Bank B parameters
-    const char* bankBParams[] = {"reverb_mix", "delay_time", "filter_res", "osc_waveform", "reverb_size"};
+    const char* bankBParams[] = {"reverb_mix", "delay_time", "filter_res", "osc_waveform", "delay_damping"};
     
     const char* paramName = (bank == Bank::A) ? bankAParams[encoderIndex] : bankBParams[encoderIndex];
     
@@ -669,11 +669,12 @@ void GPIOController::handleEncoder(int encoderIndex, int direction) {
         engine.setDelayTime(params.delayTime);
         newValue = params.delayTime;
     }
-    else if (strcmp(paramName, "reverb_size") == 0) {
-        step = 0.042f * direction;
-        params.reverbSize = clamp(params.reverbSize + step, 0.0f, 1.0f);
-        engine.setReverbSize(params.reverbSize);
-        newValue = params.reverbSize;
+    else if (strcmp(paramName, "delay_damping") == 0) {
+        // Logarithmic control for full range in ~1 rotation (24 steps)
+        float multiplier = (direction > 0) ? 1.15f : (1.0f / 1.15f);
+        params.delayDamping = clamp(params.delayDamping * multiplier, 500.0f, 10000.0f);
+        engine.setDelayDamping(params.delayDamping);
+        newValue = params.delayDamping;
     }
     else if (strcmp(paramName, "osc_waveform") == 0) {
         params.oscWaveform = (params.oscWaveform + direction + 4) % 4;
@@ -687,12 +688,8 @@ void GPIOController::handleEncoder(int encoderIndex, int direction) {
     }
     
     const char* bankName = (bank == Bank::A) ? "A" : "B";
-    if (strcmp(paramName, "reverb_size") == 0) {
-        std::cout << "[Bank " << bankName << "] unused" << std::endl;
-    } else {
-        const char* displayName = strcmp(paramName, "reverb_mix") == 0 ? "Level" : paramName;
-        std::cout << "[Bank " << bankName << "] " << displayName << ": " << newValue << std::endl;
-    }
+    const char* displayName = strcmp(paramName, "reverb_mix") == 0 ? "Level" : paramName;
+    std::cout << "[Bank " << bankName << "] " << displayName << ": " << newValue << std::endl;
 }
 
 void GPIOController::onTriggerPress() {
@@ -965,7 +962,7 @@ void GPIOController::exitSecretMode() {
         params.delayFeedback = 0.55f;// Spacey dub echoes
         params.delayTime = 0.375f;   // Dotted eighth - classic dub
         params.reverbMix = 0.4f;     // Wet for atmosphere
-        params.reverbSize = 0.7f;    // Large dub space
+        params.delayDamping = 2800.0f;
         params.release = 0.5f;       // Medium release
         params.oscWaveform = 1;      // Square for classic siren sound
 
@@ -981,7 +978,7 @@ void GPIOController::exitSecretMode() {
         engine.setDelayFeedback(params.delayFeedback);
         engine.setDelayTime(params.delayTime);
         engine.setReverbMix(params.reverbMix);
-        engine.setReverbSize(params.reverbSize);
+        engine.setDelayDamping(params.delayDamping);
         engine.setReleaseTime(params.release);
         engine.setWaveform(params.oscWaveform);
 
@@ -1003,7 +1000,7 @@ void GPIOController::applySecretModePreset() {
     SecretMode currentMode = secretMode.load();
     int preset = secretModePreset.load();  // Load once for consistent use throughout
     
-    // Preset parameters: baseFreq, filterFreq, filterRes, release, oscWaveform, delayTime, delayFeedback, reverbSize, reverbMix
+    // Preset parameters: baseFreq, filterFreq, filterRes, release, oscWaveform, delayTime, delayFeedback, delayDamping, reverbMix
     
     if (currentMode == SecretMode::NJD) {
         // NJD Classic Dub Siren Presets
@@ -1019,7 +1016,7 @@ void GPIOController::applySecretModePreset() {
                 params.oscWaveform = 1;       // Square for classic siren sound
                 params.delayTime = 0.375f;    // Dotted eighth - classic dub
                 params.delayFeedback = 0.55f; // Spacey dub echoes
-                params.reverbSize = 0.7f;     // Large dub space
+                params.delayDamping = 2800.0f;
                 params.reverbMix = 0.4f;      // Wet for atmosphere
                 // Apply LFO pitch modulation for automatic wail
                 engine.setLfoRate(2.0f);      // 2 Hz - wee-woo every 0.5 seconds
@@ -1035,7 +1032,7 @@ void GPIOController::applySecretModePreset() {
                 params.oscWaveform = 1;       // Square for more edge
                 params.delayTime = 0.375f;    // Dotted eighth for reggae feel
                 params.delayFeedback = 0.5f;  // Classic dub echoes
-                params.reverbSize = 0.65f;    // Deep dub space
+                params.delayDamping = 2800.0f;
                 params.reverbMix = 0.35f;
                 // Reset LFO pitch modulation (not used in this preset)
                 engine.setLfoPitchDepth(0.0f);
@@ -1049,7 +1046,7 @@ void GPIOController::applySecretModePreset() {
                 params.oscWaveform = 1;       // Square for harsh siren sound
                 params.delayTime = 0.375f;    // Dotted eighth - classic dub
                 params.delayFeedback = 0.55f; // Spacey dub echoes
-                params.reverbSize = 0.7f;     // Large dub space
+                params.delayDamping = 2800.0f;
                 params.reverbMix = 0.4f;      // Wet for atmosphere
                 // Reset LFO pitch modulation (not used in this preset)
                 engine.setLfoPitchDepth(0.0f);
@@ -1063,7 +1060,7 @@ void GPIOController::applySecretModePreset() {
                 params.oscWaveform = 1;       // Square for edge
                 params.delayTime = 0.25f;
                 params.delayFeedback = 0.55f;
-                params.reverbSize = 0.4f;
+                params.delayDamping = 2800.0f;
                 params.reverbMix = 0.35f;
                 // Reset LFO pitch modulation (not used in this preset)
                 engine.setLfoPitchDepth(0.0f);
@@ -1077,7 +1074,7 @@ void GPIOController::applySecretModePreset() {
                 params.oscWaveform = 2;       // Sawtooth
                 params.delayTime = 0.333f;    // Triplet feel
                 params.delayFeedback = 0.6f;
-                params.reverbSize = 0.5f;
+                params.delayDamping = 2800.0f;
                 params.reverbMix = 0.4f;
                 // Reset LFO pitch modulation (not used in this preset)
                 engine.setLfoPitchDepth(0.0f);
@@ -1100,7 +1097,7 @@ void GPIOController::applySecretModePreset() {
                 params.oscWaveform = 1;       // Square for harsh edge
                 params.delayTime = 0.03f;     // Very short for texture
                 params.delayFeedback = 0.4f;  // Moderate
-                params.reverbSize = 0.2f;     // Minimal space
+                params.delayDamping = 2800.0f;
                 params.reverbMix = 0.15f;     // Dry, punchy
                 break;
 
@@ -1112,7 +1109,7 @@ void GPIOController::applySecretModePreset() {
                 params.oscWaveform = 0;       // Sine for clean tone
                 params.delayTime = 0.1f;      // Short slapback
                 params.delayFeedback = 0.7f;  // Lots of repeats
-                params.reverbSize = 0.9f;     // Huge space
+                params.delayDamping = 2800.0f;
                 params.reverbMix = 0.5f;
                 break;
 
@@ -1124,7 +1121,7 @@ void GPIOController::applySecretModePreset() {
                 params.oscWaveform = 1;       // Square for digital feel
                 params.delayTime = 0.05f;     // Very short
                 params.delayFeedback = 0.8f;  // Heavy feedback
-                params.reverbSize = 0.3f;
+                params.delayDamping = 2800.0f;
                 params.reverbMix = 0.6f;
                 break;
 
@@ -1136,7 +1133,7 @@ void GPIOController::applySecretModePreset() {
                 params.oscWaveform = 2;       // Sawtooth for harmonics
                 params.delayTime = 0.75f;
                 params.delayFeedback = 0.5f;
-                params.reverbSize = 0.95f;    // Maximum space
+                params.delayDamping = 2800.0f;
                 params.reverbMix = 0.45f;
                 break;
         }
@@ -1153,7 +1150,7 @@ void GPIOController::applySecretModePreset() {
     engine.setWaveform(params.oscWaveform);
     engine.setDelayTime(params.delayTime);
     engine.setDelayFeedback(params.delayFeedback);
-    engine.setReverbSize(params.reverbSize);
+    engine.setDelayDamping(params.delayDamping);
     engine.setReverbMix(params.reverbMix);
     
     std::cout << "  Base: " << params.baseFreq << "Hz, Filter: " << params.filterFreq 

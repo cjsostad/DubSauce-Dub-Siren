@@ -58,6 +58,7 @@ public:
     // Delay
     void setDelayTime(float seconds);
     void setDelayFeedback(float feedback);
+    void setDelayDamping(float freq);      // -> echo feedback filter cutoff (Hz)
     void setDelayMix(float mix);           // no-op (dry + echo summed)
 
     // Reverb (no-ops; siren-only)
@@ -91,6 +92,7 @@ private:
     AudioParameter<float> lfoDepthHz;
     AudioParameter<float> toneHz;
     AudioParameter<float> delaySec;
+    AudioParameter<float> delayDampingHz;
     AudioParameter<float> feedback;
     AudioParameter<int>   oscWaveIdx;
     AudioParameter<int>   lfoWaveIdx;

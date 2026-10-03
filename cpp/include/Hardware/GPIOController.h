@@ -250,7 +250,7 @@ private:
         float filterRes = 0.5f;    // Standard resonance
         int oscWaveform = 1;  // Square for classic siren sound
         int lfoWaveform = 0;  // 0=Sine 1=Square 2=Saw 3=Triangle (repurposed from filter_res)
-        float reverbSize = 0.7f;   // Large dub space
+        float delayDamping = 2800.0f;  // Echo feedback filter cutoff (Hz)
         float release = 1.2f;      // Longer release: extended fade tail and pitch glide
     };
     Parameters params;

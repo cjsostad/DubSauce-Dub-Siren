@@ -37,6 +37,7 @@ AudioEngine::AudioEngine(int sampleRate, int bufferSize)
     , lfoDepthHz(0.0f)
     , toneHz(4000.0f)
     , delaySec(0.3f)
+    , delayDampingHz(2800.0f)
     , feedback(0.5f)
     , oscWaveIdx(1)   // Square (Pi enum) -> band-limited square
     , lfoWaveIdx(0)   // Sine
@@ -59,7 +60,6 @@ AudioEngine::AudioEngine(int sampleRate, int bufferSize)
     lfo.SetAmp(0.0f);
 
     fbFilt.Init(sr);
-    fbFilt.SetFreq(2800.0f);
     fbFilt.SetRes(0.2f);
     fbFilt.SetDrive(0.1f);
 
@@ -79,8 +79,10 @@ void AudioEngine::process(float* output, int numFrames) {
     const float fb       = feedback.get();
     const float lvl      = level.get();
     const float delTgt   = delaySec.get() * sr;
+    const float dampHz   = delayDampingHz.get();
     const float toneCoef = 1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * toneHz.get() / sr);
     const bool  gate     = gateOn.load();
+    fbFilt.SetFreq(dampHz);
 
     for (int i = 0; i < numFrames; ++i) {
         // click-free gate
@@ -142,6 +144,7 @@ void AudioEngine::setFilterCutoff(float freq) { toneHz.set(clampf(freq, 200.0f, 
 void AudioEngine::setFilterResonance(float)   {}
 void AudioEngine::setDelayTime(float seconds) { delaySec.set(clampf(seconds, 0.001f, 2.5f)); }
 void AudioEngine::setDelayFeedback(float f)   { feedback.set(clampf(f, 0.0f, 0.95f)); }
+void AudioEngine::setDelayDamping(float freq)  { delayDampingHz.set(clampf(freq, 500.0f, 10000.0f)); }
 void AudioEngine::setDelayMix(float)          {}
 void AudioEngine::setReverbSize(float)        {}
 void AudioEngine::setReverbMix(float)         {}
