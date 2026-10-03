@@ -104,7 +104,7 @@ void AudioEngine::process(float* output, int numFrames) {
         echo = fbFilt.Low();
         delayLine.Write(std::tanh(sig + fb * echo)); // soft-clipped feedback
 
-        float out = clampf((sig + echo) * lvl, -1.0f, 1.0f);
+        float out = (sig + echo) * lvl;
         output[i * 2]     = out; // L
         output[i * 2 + 1] = out; // R
     }

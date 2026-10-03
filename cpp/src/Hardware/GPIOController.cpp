@@ -621,7 +621,7 @@ void GPIOController::handleEncoder(int encoderIndex, int direction) {
     else if (strcmp(paramName, "base_freq") == 0) {
         // Logarithmic frequency control for full range in ~1 rotation (24 steps)
         float multiplier = (direction > 0) ? 1.165f : (1.0f / 1.165f);
-        params.baseFreq = clamp(params.baseFreq * multiplier, 50.0f, 2000.0f);
+        params.baseFreq = clamp(params.baseFreq * multiplier, 30.0f, 3000.0f);
         engine.setFrequency(params.baseFreq);
 
         // Only modulate delay time inversely with pitch in PitchDelay secret mode

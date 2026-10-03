@@ -29,7 +29,6 @@ if(BUILD_FOR_PI)
         message(STATUS "Detected 32-bit ARM")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mcpu=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard")
     endif()
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -ffast-math")
 endif()
 
 # Find threading support
@@ -54,15 +53,6 @@ if(BUILD_STANDALONE)
 endif()
 
 # Source files
-set(DSP_SOURCES
-    src/DSP/Oscillator.cpp
-    src/DSP/Envelope.cpp
-    src/DSP/Filter.cpp
-    src/DSP/Delay.cpp
-    src/DSP/Reverb.cpp
-    src/DSP/LFO.cpp
-)
-
 set(AUDIO_SOURCES
     src/Audio/AudioEngine.cpp
     src/Audio/AudioOutput.cpp
@@ -87,7 +77,6 @@ add_subdirectory(DaisySP)
 
 # Create the executable
 add_executable(dubsiren
-    ${DSP_SOURCES}
     ${AUDIO_SOURCES}
     ${HARDWARE_SOURCES}
     ${MAIN_SOURCES}
