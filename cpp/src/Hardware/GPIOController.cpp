@@ -650,9 +650,18 @@ void GPIOController::handleEncoder(int encoderIndex, int direction) {
         newValue = params.delayFeedback;
     }
     else if (strcmp(paramName, "reverb_mix") == 0) {
-        // Repurposed: siren output level
-        step = 0.042f * direction;
-        params.volume = clamp(params.volume + step, 0.0f, 1.0f);
+        // Logarithmic level taper with a quiet first step from mute.
+        constexpr float minimumLevel = 0.001f;
+        constexpr float levelRatio = 1.2f;
+        if (direction > 0) {
+            params.volume = params.volume <= 0.0f
+                ? minimumLevel
+                : clamp(params.volume * levelRatio, 0.0f, 1.0f);
+        } else {
+            params.volume = params.volume <= minimumLevel
+                ? 0.0f
+                : std::max(minimumLevel, params.volume / levelRatio);
+        }
         engine.setVolume(params.volume);
         newValue = params.volume;
     }
